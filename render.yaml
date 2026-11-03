@@ -1,0 +1,53 @@
+# Blueprint de Render para la API (ApiJarstore).
+# Crea la base de datos PostgreSQL y el Web Service en Docker.
+# Los secretos van como sync:false -> se cargan en el panel de Render, NUNCA aquí.
+databases:
+  - name: jarstore-db
+    databaseName: jarstoreapi
+    plan: free          # "free" se pausa con inactividad; usa "basic" para producción
+
+services:
+  - type: web
+    name: jarstore-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free          # idem: "free" duerme; "starter" para producción
+    healthCheckPath: /api/v2/health
+    autoDeploy: true    # cada push a la rama vuelve a desplegar
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: jarstore-db
+          property: connectionString
+      - key: HOST
+        value: 0.0.0.0
+      # --- Secretos: se completan en el panel de Render (Environment) ---
+      - key: JWT_SECRET            # cadena larga y aleatoria
+        sync: false
+      - key: API_PUBLIC_URL        # URL https pública de ESTA API (para el webhook de MP)
+        sync: false
+      - key: FRONTEND_URL          # URL del frontend (enlaces de correo y back_urls de pago)
+        sync: false
+      - key: CORS_ORIGINS          # mismo valor que FRONTEND_URL (coma-separado si hay varios)
+        sync: false
+      - key: CLOUDINARY_URL        # cloudinary://API_KEY:API_SECRET@zdxhrtbf
+        sync: false
+      - key: MP_ACCESS_TOKEN
+        sync: false
+      - key: MP_WEBHOOK_SECRET
+        sync: false
+      # --- Opcionales (déjalos sin definir si no los usas aún) ---
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: BLUEEXPRESS_TOKEN
+        sync: false
+      - key: BLUEEXPRESS_USERCODE
+        sync: false
+      - key: BLUEEXPRESS_CLIENT_ACCOUNT
+        sync: false
