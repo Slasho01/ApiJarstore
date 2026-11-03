@@ -1,0 +1,14 @@
+pub mod cart_services;
+pub mod category_services;
+pub mod common;
+pub mod extras_services;
+pub mod marketing_services;
+pub mod metrics_services;
+pub mod notificaciones_services;
+pub mod ordenes_services;
+pub mod perfil_services;
+pub mod product_services;
+pub mod puntos_services;
+pub mod tienda_services;
+pub mod upload_services;
+pub mod user_services;
