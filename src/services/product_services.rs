@@ -627,9 +627,11 @@ pub fn facets(conn: &mut PgConnection, f: FacetFilter) -> ApiResult<Facetas> {
             _ => caracteristicas.push(CaracteristicaFaceta { nombre: r.nombre, valores: vec![ValorFaceta { valor: r.valor, total: r.total }] }),
         }
     }
-    // Sólo características que sirven para filtrar (2+ valores o compartidas por varios productos)
-    caracteristicas.retain(|c| c.valores.len() > 1 || c.valores.iter().any(|v| v.total > 1));
-    caracteristicas.truncate(15);
+    // Un filtro útil ofrece elegir entre VARIOS valores y que al menos uno agrupe
+    // productos (si cada valor es único, no sirve para filtrar). Esto evita que la
+    // ficha técnica importada de Mercado Libre inunde los filtros con specs de nicho.
+    caracteristicas.retain(|c| c.valores.len() > 1 && c.valores.iter().any(|v| v.total > 1));
+    caracteristicas.truncate(12);
 
     let precio = diesel::sql_query(format!(
         "SELECT MIN(p.precio) AS min, MAX(p.precio) AS max, COUNT(*) AS total FROM productos p WHERE {WHERE}"))
