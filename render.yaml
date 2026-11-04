@@ -37,6 +37,12 @@ services:
       - key: MP_WEBHOOK_SECRET
         sync: false
       # --- Opcionales (déjalos sin definir si no los usas aún) ---
+      # MeliHub: centraliza publicaciones de Mercado Libre. Define ambas para activar
+      # la importación de productos y el envío de stock a ML al vender.
+      - key: MELIHUB_URL           # URL de tu instancia de MeliHub (ej. https://mi-melihub.onrender.com)
+        sync: false
+      - key: MELIHUB_API_KEY       # API-key (canal JarStore) creada en MeliHub
+        sync: false
       - key: SMTP_HOST
         sync: false
       - key: SMTP_USER

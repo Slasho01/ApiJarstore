@@ -31,6 +31,7 @@ pub async fn checkout(
     config: web::Data<crate::config::Config>,
     pay: web::Data<Payments>,
     courier: web::Data<crate::courier::Courier>,
+    melihub: web::Data<crate::melihub::Melihub>,
 ) -> ApiResult<HttpResponse> {
     let mp = pay.mp.is_some();
     let c = courier.get_ref().clone();
@@ -40,7 +41,44 @@ pub async fn checkout(
         Err(e) => log::error!("No se pudo preparar el correo de confirmación: {e}"),
     }
     notify_store_new_order(&mailer, &pool, &config.frontend_url, &orden);
+    // Baja el stock de los productos que vinieron de MeliHub, también en Mercado Libre.
+    report_stock_to_melihub(&melihub, &pool, &orden);
     Ok(HttpResponse::Created().json(orden))
+}
+
+/// Para cada producto vendido que tenga origen en MeliHub, reporta la venta para
+/// que MeliHub descuente el stock allí y lo empuje a Mercado Libre. Best-effort:
+/// corre en segundo plano y nunca frena ni invalida la venta en JarStore.
+fn report_stock_to_melihub(melihub: &web::Data<crate::melihub::Melihub>, pool: &web::Data<DbPool>, o: &OrdenDetalle) {
+    if !melihub.enabled() {
+        return;
+    }
+    let lineas: Vec<(Uuid, i32)> = o
+        .detalles
+        .iter()
+        .filter_map(|d| d.producto_id.map(|pid| (pid, d.cantidad)))
+        .filter(|(_, qty)| *qty > 0)
+        .collect();
+    if lineas.is_empty() {
+        return;
+    }
+    let client = melihub.get_ref().clone();
+    let pool = pool.clone();
+    actix_web::rt::task::spawn_blocking(move || {
+        let Ok(mut conn) = pool.get() else { return };
+        let objetivos = match crate::services::melihub_services::melihub_ids_de(&mut conn, &lineas) {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!("MeliHub: no se pudieron resolver los productos vendidos: {e}");
+                return;
+            }
+        };
+        for (mid, qty) in objetivos {
+            if let Err(e) = client.reportar_venta(mid, qty) {
+                log::warn!("MeliHub: no se pudo reportar stock de {mid} (x{qty}): {e}");
+            }
+        }
+    });
 }
 
 /// Correo de confirmación (en segundo plano; si falla sólo se registra en el log).

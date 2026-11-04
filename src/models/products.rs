@@ -33,6 +33,9 @@ pub struct Producto {
     pub alto_cm: Option<i32>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    /// Si el producto vino de MeliHub (Mercado Libre), su id allá. None = producto propio.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub melihub_id: Option<Uuid>,
 }
 
 /// Tamaño generado de una imagen subida (para `srcset`).
@@ -73,6 +76,7 @@ pub struct NewProducto {
     pub largo_cm: Option<i32>,
     pub ancho_cm: Option<i32>,
     pub alto_cm: Option<i32>,
+    pub melihub_id: Option<Uuid>,
 }
 
 #[derive(AsChangeset, Deserialize, Debug, Default)]

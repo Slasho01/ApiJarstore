@@ -322,6 +322,7 @@ diesel::table! {
         largo_cm -> Nullable<Int4>,
         ancho_cm -> Nullable<Int4>,
         alto_cm -> Nullable<Int4>,
+        melihub_id -> Nullable<Uuid>,
     }
 }
 

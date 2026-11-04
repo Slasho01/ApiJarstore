@@ -3,6 +3,7 @@ pub mod category_services;
 pub mod common;
 pub mod extras_services;
 pub mod marketing_services;
+pub mod melihub_services;
 pub mod metrics_services;
 pub mod notificaciones_services;
 pub mod ordenes_services;

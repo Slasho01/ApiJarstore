@@ -741,6 +741,7 @@ pub fn create(conn: &mut PgConnection, req: NewProductoRequest, user: AuthUser) 
                     }
                     None => unique_slug(&slugify(&req.nombre), 160, |s| slug_taken(conn, s, None))?,
                 },
+                melihub_id: None, // los productos creados a mano no vienen de MeliHub
             })
             .returning(Producto::as_returning())
             .get_result(conn)

@@ -4,6 +4,7 @@ pub mod cart_controller;
 pub mod category_controller;
 pub mod extras_controller;
 pub mod marketing_controller;
+pub mod melihub_controller;
 pub mod notificaciones_controller;
 pub mod order_controller;
 pub mod perfil_controller;

@@ -6,6 +6,7 @@ mod db;
 mod errors;
 mod jobs;
 mod mailer;
+mod melihub;
 mod payments;
 mod models;
 mod routes;
@@ -56,6 +57,7 @@ async fn main() -> std::io::Result<()> {
         mp: payments::MercadoPago::from_env(&config_data.frontend_url),
     });
     let courier_data = web::Data::new(courier::Courier::from_env());
+    let melihub_data = web::Data::new(melihub::Melihub::from_env());
     let site = web::Data::new(seo::Site::from_env(&config_data.frontend_url));
     jobs::start(pool_data.get_ref().clone(), mailer_data.get_ref().clone(), config_data.frontend_url.clone());
 
@@ -68,6 +70,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(storage_data.clone())
             .app_data(payments.clone())
             .app_data(courier_data.clone())
+            .app_data(melihub_data.clone())
             .app_data(site.clone())
             // Errores de JSON / query / path mal formados también salen como JSON
             .app_data(web::JsonConfig::default().limit(1 << 20).error_handler(|err, _| {
