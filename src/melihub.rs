@@ -42,6 +42,11 @@ pub struct PublicProducto {
     pub estado: String,
     #[serde(default)]
     pub thumbnail: Option<String>,
+    #[serde(default)]
+    pub descripcion: Option<String>,
+    /// Ficha técnica: [{"nombre": "...", "valor": "..."}, ...]
+    #[serde(default)]
+    pub especificaciones: serde_json::Value,
 }
 
 impl Melihub {

@@ -80,6 +80,12 @@ fn upsert_uno(conn: &mut PgConnection, owner: Uuid, it: &PublicProducto) -> ApiR
         let estatus = it.estado.eq_ignore_ascii_case("active");
         let stock = it.stock.max(0);
         let precio = it.precio.max(0);
+        let descripcion = it.descripcion.clone().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        let especificaciones = if it.especificaciones.is_array() {
+            it.especificaciones.clone()
+        } else {
+            serde_json::json!([])
+        };
 
         let existente: Option<Uuid> = productos::table
             .filter(productos::melihub_id.eq(it.id))
@@ -95,6 +101,8 @@ fn upsert_uno(conn: &mut PgConnection, owner: Uuid, it: &PublicProducto) -> ApiR
                     productos::precio.eq(precio),
                     productos::stock.eq(stock),
                     productos::estatus.eq(estatus),
+                    productos::descripcion.eq(&descripcion),
+                    productos::especificaciones.eq(&especificaciones),
                     productos::updated_at.eq(now()),
                 ))
                 .execute(conn)?;
@@ -105,7 +113,7 @@ fn upsert_uno(conn: &mut PgConnection, owner: Uuid, it: &PublicProducto) -> ApiR
         let producto: crate::models::products::Producto = diesel::insert_into(productos::table)
             .values(NewProducto {
                 nombre: it.titulo.chars().take(255).collect(),
-                descripcion: None,
+                descripcion: descripcion.clone(),
                 precio,
                 stock,
                 sku: Some(it.ml_item_id.clone()),
@@ -115,7 +123,7 @@ fn upsert_uno(conn: &mut PgConnection, owner: Uuid, it: &PublicProducto) -> ApiR
                 marca: None,
                 precio_anterior: None,
                 destacado: false,
-                especificaciones: serde_json::json!([]),
+                especificaciones: especificaciones.clone(),
                 compatibilidad: None,
                 garantia_meses: None,
                 slug,
