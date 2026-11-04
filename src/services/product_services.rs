@@ -106,6 +106,9 @@ pub struct ProductFilter {
     pub min_precio: Option<i64>,
     pub max_precio: Option<i64>,
     pub en_stock: Option<bool>,
+    /// Filtra por estado de publicación: "activo" (visible) | "pausado". Sólo útil
+    /// en el panel (con `incluir_inactivos`); en la tienda pública se ignora.
+    pub estado: Option<String>,
     /// Una o varias marcas separadas por coma
     pub marca: Option<String>,
     /// Marca por su slug (URL /marca/{slug})
@@ -120,6 +123,14 @@ pub struct ProductFilter {
     pub orden: Option<String>,
     #[serde(skip)]
     pub incluir_inactivos: bool,
+}
+
+/// Acción masiva sobre varios productos a la vez (panel).
+#[derive(Deserialize)]
+pub struct BulkRequest {
+    pub ids: Vec<Uuid>,
+    /// "pausar" | "reactivar" | "eliminar"
+    pub accion: String,
 }
 
 // ---------- Responses ----------
@@ -328,6 +339,11 @@ pub fn list(conn: &mut PgConnection, f: ProductFilter, p: Pagination) -> ApiResu
         let mut q = productos::table.into_boxed();
         if !f.incluir_inactivos {
             q = q.filter(productos::estatus.eq(true));
+        }
+        match f.estado.as_deref() {
+            Some("activo") | Some("visible") => q = q.filter(productos::estatus.eq(true)),
+            Some("pausado") | Some("inactivo") => q = q.filter(productos::estatus.eq(false)),
+            _ => {}
         }
         if let Some(text) = &q_text {
             // Cada palabra debe aparecer en nombre, marca, sku o descripción
@@ -841,6 +857,41 @@ pub fn delete(conn: &mut PgConnection, id: Uuid, user: AuthUser) -> ApiResult<()
     get_owned_product(conn, id, &user)?;
     diesel::delete(productos::table.find(id)).execute(conn)?;
     Ok(())
+}
+
+/// Pausa, reactiva o elimina varios productos de una sola vez. Un vendedor sólo
+/// afecta los suyos; un admin, cualquiera. Devuelve cuántos se modificaron.
+pub fn bulk(conn: &mut PgConnection, req: BulkRequest, user: AuthUser) -> ApiResult<usize> {
+    if req.ids.is_empty() {
+        return Err(ApiError::bad_request("Selecciona al menos un producto"));
+    }
+    if req.ids.len() > 500 {
+        return Err(ApiError::bad_request("Máximo 500 productos por operación"));
+    }
+    let solo_mios = !user.is_admin();
+    let n = match req.accion.as_str() {
+        "eliminar" => {
+            if solo_mios {
+                diesel::delete(productos::table.filter(productos::id.eq_any(&req.ids)).filter(productos::user_id.eq(user.id))).execute(conn)?
+            } else {
+                diesel::delete(productos::table.filter(productos::id.eq_any(&req.ids))).execute(conn)?
+            }
+        }
+        "pausar" | "reactivar" => {
+            let activo = req.accion == "reactivar";
+            if solo_mios {
+                diesel::update(productos::table.filter(productos::id.eq_any(&req.ids)).filter(productos::user_id.eq(user.id)))
+                    .set(productos::estatus.eq(activo))
+                    .execute(conn)?
+            } else {
+                diesel::update(productos::table.filter(productos::id.eq_any(&req.ids)))
+                    .set(productos::estatus.eq(activo))
+                    .execute(conn)?
+            }
+        }
+        _ => return Err(ApiError::bad_request("Acción inválida (usa pausar, reactivar o eliminar)")),
+    };
+    Ok(n)
 }
 
 // ---------- Variantes ----------

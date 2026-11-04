@@ -5,7 +5,7 @@ use crate::models::enum_role::Role;
 use crate::models::products::VarianteUpdate;
 use crate::services::common::Pagination;
 use crate::controller::upload_controller::release;
-use crate::services::product_services::{self as svc, ComplementosRequest, FacetFilter, NewImageRequest, NewProductoRequest, NewVarianteRequest, ProductFilter, UpdateProductoRequest};
+use crate::services::product_services::{self as svc, BulkRequest, ComplementosRequest, FacetFilter, NewImageRequest, NewProductoRequest, NewVarianteRequest, ProductFilter, UpdateProductoRequest};
 use crate::storage::Storage;
 use serde::Deserialize;
 use actix_web::{web, HttpResponse};
@@ -116,6 +116,13 @@ pub async fn delete(path: web::Path<Uuid>, user: AuthUser, pool: web::Data<DbPoo
     let id = path.into_inner();
     db::run(&pool, move |conn| svc::delete(conn, id, user)).await?;
     Ok(HttpResponse::NoContent().finish())
+}
+
+/// Acción masiva: pausar, reactivar o eliminar varios productos seleccionados.
+pub async fn bulk(user: AuthUser, body: web::Json<BulkRequest>, pool: web::Data<DbPool>) -> ApiResult<HttpResponse> {
+    user.require(SELLERS)?;
+    let afectados = db::run(&pool, move |conn| svc::bulk(conn, body.into_inner(), user)).await?;
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "afectados": afectados })))
 }
 
 // ---------- Variantes ----------

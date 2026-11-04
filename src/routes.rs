@@ -66,6 +66,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                     .route(post().to(product_controller::create)),
             )
             .service(r("/productos/mios").route(get().to(product_controller::mine)))
+            .service(r("/productos/acciones-masivas").route(post().to(product_controller::bulk)))
             .service(r("/marcas/{slug}").route(get().to(product_controller::brand)))
             .service(r("/buscar/sugerencias").route(get().to(product_controller::suggestions)))
             .service(r("/uploads").route(post().to(upload_controller::upload)))
