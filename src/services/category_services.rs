@@ -74,6 +74,35 @@ fn check_parent(conn: &mut PgConnection, id: Option<Uuid>, parent: Option<Uuid>)
     Ok(())
 }
 
+/// Devuelve la categoría con ese nombre (sin distinguir mayúsculas), creándola
+/// si no existe. Usada por la importación desde MeliHub.
+pub fn find_or_create(conn: &mut PgConnection, nombre: &str) -> ApiResult<Categoria> {
+    let nombre = nombre.trim();
+    if nombre.is_empty() {
+        return Err(ApiError::bad_request("Nombre de categoría vacío"));
+    }
+    if let Some(c) = categorias::table
+        .filter(categorias::nombre.ilike(nombre))
+        .select(Categoria::as_select())
+        .first(conn)
+        .optional()?
+    {
+        return Ok(c);
+    }
+    create(
+        conn,
+        NewCategoria {
+            nombre: nombre.to_string(),
+            descripcion: None,
+            estatus: true,
+            parent_id: None,
+            slug: String::new(),
+            orden: 0,
+            icono: None,
+        },
+    )
+}
+
 pub fn create(conn: &mut PgConnection, mut data: NewCategoria) -> ApiResult<Categoria> {
     data.nombre = required_text("nombre", &data.nombre, 255)?;
     data.descripcion = optional_text("descripcion", data.descripcion, 5000)?;

@@ -47,6 +47,9 @@ pub struct PublicProducto {
     /// Ficha técnica: [{"nombre": "...", "valor": "..."}, ...]
     #[serde(default)]
     pub especificaciones: serde_json::Value,
+    /// Nombre de la categoría (de Mercado Libre).
+    #[serde(default)]
+    pub categoria: Option<String>,
 }
 
 impl Melihub {

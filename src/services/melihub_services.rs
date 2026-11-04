@@ -86,6 +86,11 @@ fn upsert_uno(conn: &mut PgConnection, owner: Uuid, it: &PublicProducto) -> ApiR
         } else {
             serde_json::json!([])
         };
+        // Crea (o reutiliza) la categoría por nombre y la asigna al producto.
+        let categoria_id = match it.categoria.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            Some(nombre) => Some(crate::services::category_services::find_or_create(conn, nombre)?.id),
+            None => None,
+        };
 
         let existente: Option<Uuid> = productos::table
             .filter(productos::melihub_id.eq(it.id))
@@ -103,6 +108,7 @@ fn upsert_uno(conn: &mut PgConnection, owner: Uuid, it: &PublicProducto) -> ApiR
                     productos::estatus.eq(estatus),
                     productos::descripcion.eq(&descripcion),
                     productos::especificaciones.eq(&especificaciones),
+                    productos::categoria_id.eq(categoria_id),
                     productos::updated_at.eq(now()),
                 ))
                 .execute(conn)?;
@@ -118,7 +124,7 @@ fn upsert_uno(conn: &mut PgConnection, owner: Uuid, it: &PublicProducto) -> ApiR
                 stock,
                 sku: Some(it.ml_item_id.clone()),
                 estatus,
-                categoria_id: None,
+                categoria_id,
                 user_id: Some(owner),
                 marca: None,
                 precio_anterior: None,
