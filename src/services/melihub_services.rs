@@ -23,6 +23,9 @@ pub struct SyncResult {
     pub creados: i64,
     pub actualizados: i64,
     pub errores: i64,
+    /// Productos de MeliHub que se pausaron por ya no venir en la sincronización
+    /// (duplicados de catálogo descartados, o despublicados en Mercado Libre).
+    pub pausados: i64,
     pub total: i64,
 }
 
@@ -58,6 +61,7 @@ fn normalizar_imagen(url: &str) -> String {
 /// `owner` es el admin que dispara la sincronización (dueño de los productos nuevos).
 pub fn importar(conn: &mut PgConnection, client: &Melihub, owner: Uuid) -> ApiResult<SyncResult> {
     let items = client.fetch_productos()?;
+    let servidos: Vec<uuid::Uuid> = items.iter().map(|i| i.id).collect();
     let mut r = SyncResult { total: items.len() as i64, ..Default::default() };
 
     for it in items {
@@ -69,6 +73,20 @@ pub fn importar(conn: &mut PgConnection, client: &Melihub, owner: Uuid) -> ApiRe
                 log::warn!("MeliHub: no se pudo importar '{}' ({}): {e}", it.titulo, it.ml_item_id);
             }
         }
+    }
+
+    // Pausa los productos vinculados a MeliHub que ya NO vienen en la respuesta
+    // (duplicados de catálogo descartados o publicaciones cerradas en ML). No se
+    // borran, por si el admin quiere revisarlos; quedan en "Pausados".
+    if !servidos.is_empty() {
+        r.pausados = diesel::update(
+            productos::table
+                .filter(productos::melihub_id.is_not_null())
+                .filter(productos::melihub_id.ne_all(servidos))
+                .filter(productos::estatus.eq(true)),
+        )
+        .set(productos::estatus.eq(false))
+        .execute(conn)? as i64;
     }
     Ok(r)
 }
