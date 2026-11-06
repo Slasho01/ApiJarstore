@@ -19,6 +19,39 @@ pub struct Site {
     /// compilar el frontend, se recarga solo (sin reiniciar la API).
     template: std::sync::RwLock<Option<(std::time::SystemTime, std::sync::Arc<String>)>>,
     pub public_url: String,
+    /// Tags de analítica/verificación (GA4, Search Console, Meta Pixel), por env.
+    analytics: String,
+}
+
+/// Deja solo caracteres seguros para un id (evita inyección vía variables de entorno).
+fn safe_id(s: &str) -> String {
+    s.trim().chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect()
+}
+
+/// Construye los snippets de analítica desde variables de entorno (los que estén definidos).
+fn build_analytics() -> String {
+    const GA_TPL: &str = "<script async src=\"https://www.googletagmanager.com/gtag/js?id=__ID__\"></script>\n<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','__ID__');</script>\n";
+    const PIXEL_TPL: &str = "<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','__ID__');fbq('track','PageView');</script>\n<noscript><img height=\"1\" width=\"1\" style=\"display:none\" src=\"https://www.facebook.com/tr?id=__ID__&ev=PageView&noscript=1\"/></noscript>\n";
+    let mut h = String::new();
+    if let Ok(v) = std::env::var("GOOGLE_SITE_VERIFICATION") {
+        let v = safe_id(&v);
+        if !v.is_empty() {
+            h.push_str(&format!("<meta name=\"google-site-verification\" content=\"{v}\" />\n"));
+        }
+    }
+    if let Ok(v) = std::env::var("GA_MEASUREMENT_ID") {
+        let v = safe_id(&v);
+        if !v.is_empty() {
+            h.push_str(&GA_TPL.replace("__ID__", &v));
+        }
+    }
+    if let Ok(v) = std::env::var("META_PIXEL_ID") {
+        let v = safe_id(&v);
+        if !v.is_empty() {
+            h.push_str(&PIXEL_TPL.replace("__ID__", &v));
+        }
+    }
+    h
 }
 
 impl Site {
@@ -31,7 +64,11 @@ impl Site {
             Some(d) => log::warn!("FRONTEND_DIST={} no contiene index.html (ejecuta `npm run build`)", d.display()),
             None => log::info!("Frontend no servido por la API (define FRONTEND_DIST para producción)"),
         }
-        Site { dist, template: std::sync::RwLock::new(None), public_url }
+        let analytics = build_analytics();
+        if !analytics.is_empty() {
+            log::info!("Analítica/verificación activa (GA/Pixel/Search Console por env)");
+        }
+        Site { dist, template: std::sync::RwLock::new(None), public_url, analytics }
     }
 
     /// index.html actual (se relee si cambió en disco).
@@ -332,9 +369,10 @@ pub async fn frontend(req: HttpRequest, site: web::Data<Site>, pool: web::Data<D
         let loc = if q.is_empty() { to } else { format!("{to}?{q}") };
         return Ok(HttpResponse::MovedPermanently().insert_header((header::LOCATION, loc)).finish());
     }
+    let injected = format!("{}{}", head.render(&store), site.analytics);
     let html = match (template.find("<!--seo-->"), template.find("<!--/seo-->")) {
-        (Some(a), Some(b)) => format!("{}{}{}", &template[..a], head.render(&store), &template[b + "<!--/seo-->".len()..]),
-        _ => template.replacen("</head>", &format!("{}</head>", head.render(&store)), 1),
+        (Some(a), Some(b)) => format!("{}{}{}", &template[..a], injected, &template[b + "<!--/seo-->".len()..]),
+        _ => template.replacen("</head>", &format!("{injected}</head>"), 1),
     };
     let status = actix_web::http::StatusCode::from_u16(if head.status == 0 { 200 } else { head.status }).unwrap_or(actix_web::http::StatusCode::OK);
     Ok(HttpResponse::build(status)

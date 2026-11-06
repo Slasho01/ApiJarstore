@@ -57,3 +57,11 @@ services:
         sync: false
       - key: BLUEEXPRESS_CLIENT_ACCOUNT
         sync: false
+
+      # Analítica / verificación (opcionales):
+      - key: GA_MEASUREMENT_ID
+        sync: false
+      - key: META_PIXEL_ID
+        sync: false
+      - key: GOOGLE_SITE_VERIFICATION
+        sync: false
