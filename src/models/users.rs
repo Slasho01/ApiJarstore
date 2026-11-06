@@ -15,6 +15,8 @@ pub struct User {
     pub role: Role,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub twofa_secret: Option<String>,
+    pub twofa_enabled: bool,
 }
 
 #[derive(Insertable, Debug)]
@@ -35,6 +37,7 @@ pub struct UserResponse {
     pub role: Role,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub twofa_enabled: bool,
 }
 
 impl From<User> for UserResponse {
@@ -46,6 +49,7 @@ impl From<User> for UserResponse {
             role: u.role,
             created_at: u.created_at,
             updated_at: u.updated_at,
+            twofa_enabled: u.twofa_enabled,
         }
     }
 }

@@ -226,3 +226,40 @@ pub fn reset_password(conn: &mut PgConnection, token: &str, new_password: &str) 
 }
 
 pub const RESET_TTL: i64 = RESET_TTL_MINUTES;
+
+// ----------------------------- 2FA (TOTP) -----------------------------
+
+/// Genera el secreto 2FA (sin activar). Devuelve (secreto, url_otpauth, qr_png_base64).
+pub fn twofa_setup(conn: &mut PgConnection, id: Uuid) -> ApiResult<(String, String, String)> {
+    let u = get_user(conn, id)?;
+    let secret = crate::twofa::generar_secret();
+    let url = crate::twofa::url(&secret, &u.email)?;
+    let qr = crate::twofa::qr(&secret, &u.email)?;
+    diesel::update(users::table.find(id))
+        .set((users::twofa_secret.eq(Some(crate::crypto::cifrar(&secret))), users::twofa_enabled.eq(false), users::updated_at.eq(now())))
+        .execute(conn)?;
+    Ok((secret, url, qr))
+}
+
+pub fn twofa_enable(conn: &mut PgConnection, id: Uuid, codigo: &str) -> ApiResult<()> {
+    let u = get_user(conn, id)?;
+    let secret = crate::crypto::descifrar(&u.twofa_secret.ok_or_else(|| ApiError::bad_request("Primero genera el 2FA"))?);
+    if !crate::twofa::verificar(&secret, codigo) {
+        return Err(ApiError::bad_request("Código de verificación inválido"));
+    }
+    diesel::update(users::table.find(id))
+        .set((users::twofa_enabled.eq(true), users::updated_at.eq(now())))
+        .execute(conn)?;
+    Ok(())
+}
+
+pub fn twofa_disable(conn: &mut PgConnection, id: Uuid, codigo: &str) -> ApiResult<()> {
+    let u = get_user(conn, id)?;
+    if u.twofa_enabled && !crate::twofa::verificar(&crate::crypto::descifrar(u.twofa_secret.as_deref().unwrap_or("")), codigo) {
+        return Err(ApiError::bad_request("Código de verificación inválido"));
+    }
+    diesel::update(users::table.find(id))
+        .set((users::twofa_secret.eq::<Option<String>>(None), users::twofa_enabled.eq(false), users::updated_at.eq(now())))
+        .execute(conn)?;
+    Ok(())
+}

@@ -1,0 +1,2 @@
+ALTER TABLE users DROP COLUMN IF EXISTS twofa_enabled;
+ALTER TABLE users DROP COLUMN IF EXISTS twofa_secret;

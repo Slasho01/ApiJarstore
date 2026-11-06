@@ -10,6 +10,32 @@ use actix_web::{web, HttpResponse};
 use serde::Deserialize;
 use uuid::Uuid;
 
+#[derive(Deserialize)]
+pub struct CodigoBody {
+    pub codigo: String,
+}
+
+/// Genera el secreto 2FA (sin activar) y devuelve QR + secreto.
+pub async fn twofa_setup(user: AuthUser, pool: web::Data<DbPool>) -> ApiResult<HttpResponse> {
+    let id = user.id;
+    let (secret, url, qr) = db::run(&pool, move |conn| user_services::twofa_setup(conn, id)).await?;
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "secret": secret, "url": url, "qr": qr })))
+}
+
+/// Activa el 2FA tras verificar un código.
+pub async fn twofa_enable(user: AuthUser, body: web::Json<CodigoBody>, pool: web::Data<DbPool>) -> ApiResult<HttpResponse> {
+    let (id, codigo) = (user.id, body.into_inner().codigo);
+    db::run(&pool, move |conn| user_services::twofa_enable(conn, id, &codigo)).await?;
+    Ok(ok_message("2FA activado"))
+}
+
+/// Desactiva el 2FA.
+pub async fn twofa_disable(user: AuthUser, body: web::Json<CodigoBody>, pool: web::Data<DbPool>) -> ApiResult<HttpResponse> {
+    let (id, codigo) = (user.id, body.into_inner().codigo);
+    db::run(&pool, move |conn| user_services::twofa_disable(conn, id, &codigo)).await?;
+    Ok(ok_message("2FA desactivado"))
+}
+
 pub async fn me(user: AuthUser, pool: web::Data<DbPool>) -> ApiResult<HttpResponse> {
     let u = db::run(&pool, move |conn| user_services::get_user(conn, user.id)).await?;
     Ok(HttpResponse::Ok().json(UserResponse::from(u)))

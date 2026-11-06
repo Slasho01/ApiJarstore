@@ -14,6 +14,8 @@ pub struct LoginRequest {
     #[serde(alias = "email")]
     pub username: String,
     pub password: String,
+    #[serde(default)]
+    pub codigo: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -35,7 +37,7 @@ pub async fn login(
     limiter: web::Data<LoginLimiter>,
     req: HttpRequest,
 ) -> ApiResult<HttpResponse> {
-    let LoginRequest { username, password } = body.into_inner();
+    let LoginRequest { username, password, codigo } = body.into_inner();
     let ip = req.connection_info().realip_remote_addr().unwrap_or("?").to_string();
     let key = format!("{}|{}", username.trim().to_lowercase(), ip);
     limiter.check(&key)?;
@@ -55,6 +57,21 @@ pub async fn login(
 
     match user {
         Some(user) => {
+            // 2FA: si está activo, exige el código TOTP.
+            if user.twofa_enabled {
+                match codigo.as_deref() {
+                    None => {
+                        limiter.reset(&key);
+                        return Ok(HttpResponse::Ok().json(serde_json::json!({ "twofa_required": true })));
+                    }
+                    Some(c) => {
+                        if !crate::twofa::verificar(&crate::crypto::descifrar(user.twofa_secret.as_deref().unwrap_or("")), c) {
+                            limiter.register_failure(&key);
+                            return Err(ApiError::unauthorized("Código de verificación inválido"));
+                        }
+                    }
+                }
+            }
             limiter.reset(&key);
             log::info!("login ok: {}", user.username);
             let token = generate_jwt(&config, user.id, user.role)?;

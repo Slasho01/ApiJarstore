@@ -35,6 +35,9 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(r("/users").route(post().to(auth_controller::register))) // compatibilidad
             .service(r("/users/me").route(get().to(user_controller::me)))
             .service(r("/users/me/password").route(put().to(user_controller::change_my_password)))
+            .service(r("/users/me/2fa/setup").route(post().to(user_controller::twofa_setup)))
+            .service(r("/users/me/2fa/enable").route(post().to(user_controller::twofa_enable)))
+            .service(r("/users/me/2fa/disable").route(post().to(user_controller::twofa_disable)))
             .service(
                 r("/users/{id}")
                     .route(get().to(user_controller::get_by_id))

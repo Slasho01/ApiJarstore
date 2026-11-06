@@ -1,5 +1,6 @@
 mod auth;
 mod config;
+mod crypto;
 mod courier;
 mod controller;
 mod db;
@@ -14,6 +15,7 @@ mod schema;
 mod seo;
 mod services;
 mod storage;
+mod twofa;
 
 use crate::auth::LoginLimiter;
 use crate::config::Config;
