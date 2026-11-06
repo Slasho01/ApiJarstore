@@ -74,7 +74,7 @@ pub async fn login(
             }
             limiter.reset(&key);
             log::info!("login ok: {}", user.username);
-            let token = generate_jwt(&config, user.id, user.role)?;
+            let token = generate_jwt(&config, user.id, user.role, user.session_version)?;
             Ok(HttpResponse::Ok().json(LoginResponse {
                 token,
                 token_type: "Bearer",

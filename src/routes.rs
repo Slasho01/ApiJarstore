@@ -38,6 +38,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(r("/users/me/2fa/setup").route(post().to(user_controller::twofa_setup)))
             .service(r("/users/me/2fa/enable").route(post().to(user_controller::twofa_enable)))
             .service(r("/users/me/2fa/disable").route(post().to(user_controller::twofa_disable)))
+            .service(r("/users/me/logout-all").route(post().to(user_controller::logout_all)))
             .service(
                 r("/users/{id}")
                     .route(get().to(user_controller::get_by_id))

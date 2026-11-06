@@ -17,6 +17,7 @@ pub struct User {
     pub updated_at: NaiveDateTime,
     pub twofa_secret: Option<String>,
     pub twofa_enabled: bool,
+    pub session_version: i32,
 }
 
 #[derive(Insertable, Debug)]

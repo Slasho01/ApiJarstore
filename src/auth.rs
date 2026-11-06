@@ -5,7 +5,8 @@ use actix_web::{dev::Payload, web, FromRequest, HttpRequest};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::future::{ready, Ready};
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
@@ -19,9 +20,11 @@ pub struct Claims {
     pub iat: u64,
     pub iss: String,
     pub rls: Role,
+    #[serde(default)]
+    pub sv: i32, // versión de sesión (para revocar tokens)
 }
 
-pub fn generate_jwt(config: &Config, user_id: Uuid, role: Role) -> Result<String, ApiError> {
+pub fn generate_jwt(config: &Config, user_id: Uuid, role: Role, sv: i32) -> Result<String, ApiError> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| ApiError::internal(e.to_string()))?
@@ -32,6 +35,7 @@ pub fn generate_jwt(config: &Config, user_id: Uuid, role: Role) -> Result<String
         exp: now + config.jwt_ttl_seconds,
         iss: ISSUER.to_string(),
         rls: role,
+        sv,
     };
     encode(
         &Header::new(Algorithm::HS256),
@@ -83,14 +87,34 @@ impl AuthUser {
 
 impl FromRequest for AuthUser {
     type Error = ApiError;
-    type Future = Ready<Result<Self, Self::Error>>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self, Self::Error>>>>;
 
     fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
-        ready(extract_user(req))
+        let req = req.clone();
+        Box::pin(async move {
+            let (user, token_sv) = extract_user(&req)?;
+            // Revalidación por request: el usuario debe existir y su session_version
+            // coincidir con el del token (permite revocar sesiones al instante).
+            let pool = req
+                .app_data::<web::Data<crate::db::DbPool>>()
+                .ok_or_else(|| ApiError::internal("Pool no disponible"))?
+                .clone();
+            let uid = user.id;
+            let sv_db: Option<i32> = crate::db::run(&pool, move |conn| {
+                use crate::schema::users::dsl as u;
+                use diesel::prelude::*;
+                u::users.find(uid).select(u::session_version).first::<i32>(conn).optional().map_err(ApiError::from)
+            })
+            .await?;
+            match sv_db {
+                Some(sv) if sv == token_sv => Ok(user),
+                _ => Err(ApiError::unauthorized("Tu sesión expiró o fue revocada. Inicia sesión de nuevo.")),
+            }
+        })
     }
 }
 
-fn extract_user(req: &HttpRequest) -> Result<AuthUser, ApiError> {
+fn extract_user(req: &HttpRequest) -> Result<(AuthUser, i32), ApiError> {
     let config = req
         .app_data::<web::Data<Config>>()
         .ok_or_else(|| ApiError::internal("Config no registrada en la App"))?;
@@ -105,7 +129,7 @@ fn extract_user(req: &HttpRequest) -> Result<AuthUser, ApiError> {
         .ok_or_else(|| ApiError::unauthorized("Formato esperado: Bearer <token>"))?;
     let claims = decode_jwt(config, token.trim())?;
     let id = Uuid::parse_str(&claims.sub).map_err(|_| ApiError::unauthorized("Token inválido"))?;
-    Ok(AuthUser { id, role: claims.rls })
+    Ok((AuthUser { id, role: claims.rls }, claims.sv))
 }
 
 /// Limitador sencillo de intentos fallidos de login (en memoria, por clave).

@@ -36,6 +36,13 @@ pub async fn twofa_disable(user: AuthUser, body: web::Json<CodigoBody>, pool: we
     Ok(ok_message("2FA desactivado"))
 }
 
+/// Cierra la sesión en todos los dispositivos (invalida todos los tokens).
+pub async fn logout_all(user: AuthUser, pool: web::Data<DbPool>) -> ApiResult<HttpResponse> {
+    let id = user.id;
+    db::run(&pool, move |conn| user_services::logout_all(conn, id)).await?;
+    Ok(ok_message("Se cerraron todas las sesiones"))
+}
+
 pub async fn me(user: AuthUser, pool: web::Data<DbPool>) -> ApiResult<HttpResponse> {
     let u = db::run(&pool, move |conn| user_services::get_user(conn, user.id)).await?;
     Ok(HttpResponse::Ok().json(UserResponse::from(u)))

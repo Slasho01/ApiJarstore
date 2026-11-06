@@ -430,6 +430,7 @@ diesel::table! {
         #[max_length = 160]
         twofa_secret -> Nullable<Varchar>,
         twofa_enabled -> Bool,
+        session_version -> Int4,
     }
 }
 

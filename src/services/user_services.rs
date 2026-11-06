@@ -113,7 +113,15 @@ pub fn change_password(conn: &mut PgConnection, id: Uuid, req: ChangePasswordReq
     }
     let new_hash = hash_password(&req.new_password)?;
     diesel::update(users::table.find(id))
-        .set((users::password_hash.eq(new_hash), users::updated_at.eq(now())))
+        .set((users::password_hash.eq(new_hash), users::session_version.eq(users::session_version + 1), users::updated_at.eq(now())))
+        .execute(conn)?;
+    Ok(())
+}
+
+/// Cierra la sesión en todos los dispositivos (sube la versión → invalida los tokens).
+pub fn logout_all(conn: &mut PgConnection, id: Uuid) -> ApiResult<()> {
+    diesel::update(users::table.find(id))
+        .set((users::session_version.eq(users::session_version + 1), users::updated_at.eq(now())))
         .execute(conn)?;
     Ok(())
 }
@@ -216,7 +224,7 @@ pub fn reset_password(conn: &mut PgConnection, token: &str, new_password: &str) 
             .optional()?;
         let (reset_id, user_id) = row.ok_or_else(|| ApiError::bad_request("El enlace no es válido o ya expiró. Solicita uno nuevo"))?;
         diesel::update(users::table.find(user_id))
-            .set((users::password_hash.eq(hash_password(new_password)?), users::updated_at.eq(now())))
+            .set((users::password_hash.eq(hash_password(new_password)?), users::session_version.eq(users::session_version + 1), users::updated_at.eq(now())))
             .execute(conn)?;
         diesel::update(password_resets::table.find(reset_id))
             .set(password_resets::used_at.eq(now()))
