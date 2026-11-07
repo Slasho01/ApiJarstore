@@ -42,14 +42,14 @@ pub async fn checkout(
     }
     notify_store_new_order(&mailer, &pool, &config.frontend_url, &orden);
     // Baja el stock de los productos que vinieron de MeliHub, también en Mercado Libre.
-    report_stock_to_melihub(&melihub, &pool, &orden);
+    report_melihub(&melihub, &pool, &orden, false);
     Ok(HttpResponse::Created().json(orden))
 }
 
-/// Para cada producto vendido que tenga origen en MeliHub, reporta la venta para
-/// que MeliHub descuente el stock allí y lo empuje a Mercado Libre. Best-effort:
-/// corre en segundo plano y nunca frena ni invalida la venta en JarStore.
-fn report_stock_to_melihub(melihub: &web::Data<crate::melihub::Melihub>, pool: &web::Data<DbPool>, o: &OrdenDetalle) {
+/// Para cada producto de la orden con origen en MeliHub, reporta el movimiento de stock a
+/// MeliHub (que a su vez lo empuja a Mercado Libre): venta = descuenta, `devolucion` = suma.
+/// Best-effort: corre en segundo plano y nunca frena ni invalida la operación en JarStore.
+fn report_melihub(melihub: &web::Data<crate::melihub::Melihub>, pool: &web::Data<DbPool>, o: &OrdenDetalle, devolucion: bool) {
     if !melihub.enabled() {
         return;
     }
@@ -74,8 +74,10 @@ fn report_stock_to_melihub(melihub: &web::Data<crate::melihub::Melihub>, pool: &
             }
         };
         for (mid, qty) in objetivos {
-            if let Err(e) = client.reportar_venta(mid, qty) {
-                log::warn!("MeliHub: no se pudo reportar stock de {mid} (x{qty}): {e}");
+            let res = if devolucion { client.reportar_devolucion(mid, qty) } else { client.reportar_venta(mid, qty) };
+            if let Err(e) = res {
+                let accion = if devolucion { "devolución" } else { "venta" };
+                log::warn!("MeliHub: no se pudo reportar {accion} de stock de {mid} (x{qty}): {e}");
             }
         }
     });
@@ -178,10 +180,12 @@ pub async fn get(path: web::Path<Uuid>, user: AuthUser, pool: web::Data<DbPool>)
     Ok(HttpResponse::Ok().json(db::run(&pool, move |conn| svc::get_for(conn, id, &user)).await?))
 }
 
-pub async fn cancel(path: web::Path<Uuid>, user: AuthUser, pool: web::Data<DbPool>, mailer: web::Data<Mailer>, config: web::Data<crate::config::Config>) -> ApiResult<HttpResponse> {
+pub async fn cancel(path: web::Path<Uuid>, user: AuthUser, pool: web::Data<DbPool>, mailer: web::Data<Mailer>, config: web::Data<crate::config::Config>, melihub: web::Data<crate::melihub::Melihub>) -> ApiResult<HttpResponse> {
     let id = path.into_inner();
     let orden = db::run(&pool, move |conn| svc::cancel(conn, id, user)).await?;
     send_status_email(&mailer, &config.frontend_url, &orden, "cancelado");
+    // La cancelación restauró el stock local; devuélvelo también en MeliHub/Mercado Libre.
+    report_melihub(&melihub, &pool, &orden, true);
     Ok(HttpResponse::Ok().json(orden))
 }
 
@@ -205,11 +209,16 @@ pub async fn admin_set_status(
     pool: web::Data<DbPool>,
     mailer: web::Data<Mailer>,
     config: web::Data<crate::config::Config>,
+    melihub: web::Data<crate::melihub::Melihub>,
 ) -> ApiResult<HttpResponse> {
     user.require(&[Role::Admin])?;
     let (id, next) = (path.into_inner(), body.estatus);
     let orden = db::run(&pool, move |conn| svc::set_status(conn, id, next)).await?;
     send_status_email(&mailer, &config.frontend_url, &orden, next.as_str());
+    // Si el admin la pasó a cancelado, se restauró el stock local: devuélvelo en MeliHub/ML.
+    if next == crate::models::orden::EstatusOrden::Cancelado {
+        report_melihub(&melihub, &pool, &orden, true);
+    }
     Ok(HttpResponse::Ok().json(orden))
 }
 

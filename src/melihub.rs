@@ -123,4 +123,23 @@ impl Melihub {
         }
         Ok(())
     }
+
+    /// Reporta una devolución a MeliHub (cancelación): SUMA el stock allí y lo empuja de
+    /// vuelta a Mercado Libre.
+    pub fn reportar_devolucion(&self, producto_id: Uuid, cantidad: i32) -> ApiResult<()> {
+        let c = self.require()?;
+        let res = Self::http()?
+            .post(format!("{}/api/pub/devoluciones", c.base))
+            .header("X-API-Key", &c.api_key)
+            .header("ngrok-skip-browser-warning", "1")
+            .json(&serde_json::json!({ "producto_id": producto_id, "cantidad": cantidad }))
+            .send()
+            .map_err(|e| ApiError::internal(format!("MeliHub no respondió: {e}")))?;
+        let status = res.status();
+        if !status.is_success() {
+            let text = res.text().unwrap_or_default();
+            return Err(ApiError::internal(format!("MeliHub rechazó la devolución ({status}): {text}")));
+        }
+        Ok(())
+    }
 }
