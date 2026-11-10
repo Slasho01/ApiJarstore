@@ -36,6 +36,9 @@ pub struct Producto {
     /// Si el producto vino de MeliHub (Mercado Libre), su id allá. None = producto propio.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub melihub_id: Option<Uuid>,
+    /// URL del video (YouTube) de la ficha, si tiene.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub video_url: Option<String>,
 }
 
 /// Tamaño generado de una imagen subida (para `srcset`).
@@ -77,6 +80,7 @@ pub struct NewProducto {
     pub ancho_cm: Option<i32>,
     pub alto_cm: Option<i32>,
     pub melihub_id: Option<Uuid>,
+    pub video_url: Option<String>,
 }
 
 #[derive(AsChangeset, Deserialize, Debug, Default)]

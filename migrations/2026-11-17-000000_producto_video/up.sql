@@ -1,0 +1,1 @@
+ALTER TABLE productos ADD COLUMN video_url VARCHAR(500);

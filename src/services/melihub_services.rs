@@ -127,6 +127,7 @@ fn upsert_uno(conn: &mut PgConnection, owner: Uuid, it: &PublicProducto) -> ApiR
                     productos::descripcion.eq(&descripcion),
                     productos::especificaciones.eq(&especificaciones),
                     productos::categoria_id.eq(categoria_id),
+                    productos::video_url.eq(&it.video),
                     productos::updated_at.eq(now()),
                 ))
                 .execute(conn)?;
@@ -158,6 +159,7 @@ fn upsert_uno(conn: &mut PgConnection, owner: Uuid, it: &PublicProducto) -> ApiR
                 ancho_cm: None,
                 alto_cm: None,
                 melihub_id: Some(it.id),
+                video_url: it.video.clone(),
             })
             .returning(crate::models::products::Producto::as_returning())
             .get_result(conn)?;

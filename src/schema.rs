@@ -323,6 +323,8 @@ diesel::table! {
         ancho_cm -> Nullable<Int4>,
         alto_cm -> Nullable<Int4>,
         melihub_id -> Nullable<Uuid>,
+        #[max_length = 500]
+        video_url -> Nullable<Varchar>,
     }
 }
 
