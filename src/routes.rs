@@ -24,6 +24,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(r("/health").route(get().to(health)))
             // ---- Auth ----
             .service(r("/auth/login").route(post().to(auth_controller::login)))
+            .service(r("/auth/login/2fa").route(post().to(auth_controller::login_2fa)))
             .service(r("/auth/register").route(post().to(auth_controller::register)))
             .service(r("/auth/forgot").route(post().to(auth_controller::forgot_password)))
             .service(r("/auth/reset").route(post().to(auth_controller::reset_password)))

@@ -45,6 +45,39 @@ pub fn generate_jwt(config: &Config, user_id: Uuid, role: Role, sv: i32) -> Resu
     .map_err(|e| ApiError::internal(format!("No se pudo firmar el token: {e}")))
 }
 
+#[derive(Serialize, Deserialize)]
+struct Pending2faClaims {
+    sub: String,     // user id que ya validó la contraseña
+    purpose: String, // "2fa"
+    exp: u64,
+}
+
+/// Token temporal (5 min) emitido tras validar la contraseña, para completar el 2FA en un
+/// 2º request SIN reenviar usuario/contraseña.
+pub fn create_pending_2fa(config: &Config, user_id: Uuid) -> Result<String, ApiError> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| ApiError::internal(e.to_string()))?
+        .as_secs();
+    let claims = Pending2faClaims { sub: user_id.to_string(), purpose: "2fa".to_string(), exp: now + 300 };
+    encode(&Header::new(Algorithm::HS256), &claims, &EncodingKey::from_secret(config.jwt_secret.as_bytes()))
+        .map_err(|e| ApiError::internal(format!("No se pudo firmar el token: {e}")))
+}
+
+/// Verifica el token temporal de 2FA y devuelve el id del usuario que validó contraseña.
+pub fn verify_pending_2fa(config: &Config, token: &str) -> Result<Uuid, ApiError> {
+    let data = decode::<Pending2faClaims>(
+        token.trim(),
+        &DecodingKey::from_secret(config.jwt_secret.as_bytes()),
+        &Validation::new(Algorithm::HS256),
+    )
+    .map_err(|_| ApiError::unauthorized("La verificación expiró. Vuelve a iniciar sesión."))?;
+    if data.claims.purpose != "2fa" {
+        return Err(ApiError::unauthorized("Token inválido"));
+    }
+    Uuid::parse_str(&data.claims.sub).map_err(|_| ApiError::unauthorized("Token inválido"))
+}
+
 fn decode_jwt(config: &Config, token: &str) -> Result<Claims, ApiError> {
     let mut validation = Validation::new(Algorithm::HS256);
     validation.set_issuer(&[ISSUER]);

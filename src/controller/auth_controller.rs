@@ -62,7 +62,10 @@ pub async fn login(
                 match codigo.as_deref() {
                     None => {
                         limiter.reset(&key);
-                        return Ok(HttpResponse::Ok().json(serde_json::json!({ "twofa_required": true })));
+                        // Contraseña ya validada: token temporal para completar el 2FA sin
+                        // reenviar usuario+contraseña en el 2º paso.
+                        let pending = crate::auth::create_pending_2fa(&config, user.id)?;
+                        return Ok(HttpResponse::Ok().json(serde_json::json!({ "twofa_required": true, "pending": pending })));
                     }
                     Some(c) => {
                         if !crate::twofa::verificar(&crate::crypto::descifrar(user.twofa_secret.as_deref().unwrap_or("")), c) {
@@ -86,6 +89,44 @@ pub async fn login(
             limiter.register_failure(&key);
             log::warn!("login fallido desde {ip}");
             Err(ApiError::unauthorized("Credenciales inválidas"))
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct TwoFaRequest {
+    pub pending: String,
+    pub codigo: String,
+}
+
+/// Segundo paso del login con 2FA: token temporal + código TOTP, SIN reenviar
+/// usuario/contraseña. Emite la sesión definitiva.
+pub async fn login_2fa(
+    body: web::Json<TwoFaRequest>,
+    pool: web::Data<DbPool>,
+    config: web::Data<Config>,
+    limiter: web::Data<LoginLimiter>,
+    req: HttpRequest,
+) -> ApiResult<HttpResponse> {
+    let TwoFaRequest { pending, codigo } = body.into_inner();
+    let ip = req.connection_info().realip_remote_addr().unwrap_or("?").to_string();
+    let key = format!("2fa|{ip}");
+    limiter.check(&key)?;
+    let user_id = crate::auth::verify_pending_2fa(&config, &pending)?;
+    match db::run(&pool, move |conn| user_services::complete_2fa(conn, user_id, &codigo)).await {
+        Ok(user) => {
+            limiter.reset(&key);
+            let token = generate_jwt(&config, user.id, user.role, user.session_version)?;
+            Ok(HttpResponse::Ok().json(LoginResponse {
+                token,
+                token_type: "Bearer",
+                expires_in: config.jwt_ttl_seconds,
+                user: user.into(),
+            }))
+        }
+        Err(e) => {
+            limiter.register_failure(&key);
+            Err(e)
         }
     }
 }

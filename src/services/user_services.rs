@@ -98,6 +98,24 @@ pub fn find_by_login(conn: &mut PgConnection, login: &str) -> ApiResult<Option<U
         .optional()?)
 }
 
+/// Completa el login tras un 2FA válido. Se llama SOLO con un token temporal de 2FA
+/// (emitido tras validar la contraseña), así que NO revisa contraseña: solo el código TOTP.
+pub fn complete_2fa(conn: &mut PgConnection, user_id: Uuid, codigo: &str) -> ApiResult<User> {
+    let user: User = users::table
+        .find(user_id)
+        .select(User::as_select())
+        .first(conn)
+        .optional()?
+        .ok_or_else(|| ApiError::unauthorized("Sesión inválida. Vuelve a iniciar sesión."))?;
+    if !user.twofa_enabled {
+        return Err(ApiError::unauthorized("Este usuario no tiene 2FA activo"));
+    }
+    if !crate::twofa::verificar(&crate::crypto::descifrar(user.twofa_secret.as_deref().unwrap_or("")), codigo.trim()) {
+        return Err(ApiError::unauthorized("Código de verificación inválido"));
+    }
+    Ok(user)
+}
+
 pub fn get_user(conn: &mut PgConnection, id: Uuid) -> ApiResult<User> {
     users::table.find(id).select(User::as_select()).first(conn).or_not_found("Usuario")
 }
