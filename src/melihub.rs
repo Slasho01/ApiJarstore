@@ -42,14 +42,45 @@ pub struct PublicProducto {
     pub estado: String,
     #[serde(default)]
     pub thumbnail: Option<String>,
+    /// TODAS las imágenes de la publicación (galería), alta calidad.
+    #[serde(default)]
+    pub imagenes: Vec<String>,
+    /// URL del video (YouTube) si la publicación tiene.
+    #[serde(default)]
+    pub video: Option<String>,
     #[serde(default)]
     pub descripcion: Option<String>,
     /// Ficha técnica: [{"nombre": "...", "valor": "..."}, ...]
     #[serde(default)]
     pub especificaciones: serde_json::Value,
+    /// Variantes (color/talla/etc.) con su stock, precio e imágenes propias.
+    #[serde(default)]
+    pub variantes: Vec<VariantePub>,
     /// Nombre de la categoría (de Mercado Libre).
     #[serde(default)]
     pub categoria: Option<String>,
+}
+
+/// Una variante tal como la entrega MeliHub (normalizada desde Mercado Libre).
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct VariantePub {
+    pub id: i64,
+    #[serde(default)]
+    pub atributos: Vec<AtributoPub>,
+    #[serde(default)]
+    pub precio: i64,
+    #[serde(default)]
+    pub stock: i32,
+    #[serde(default)]
+    pub imagenes: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct AtributoPub {
+    #[serde(default)]
+    pub nombre: String,
+    #[serde(default)]
+    pub valor: String,
 }
 
 impl Melihub {

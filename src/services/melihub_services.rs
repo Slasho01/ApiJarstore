@@ -9,9 +9,9 @@
 //! precio, stock y estado), para no pisar ajustes hechos en JarStore.
 
 use crate::errors::ApiResult;
-use crate::melihub::{Melihub, PublicProducto};
-use crate::models::products::{NewProductImage, NewProducto};
-use crate::schema::{product_images, producto_slugs_antiguos, productos};
+use crate::melihub::{Melihub, PublicProducto, VariantePub};
+use crate::models::products::{NewProductImage, NewProducto, NewVariante, NewVariantImage};
+use crate::schema::{product_images, product_variant_images, product_variants, producto_slugs_antiguos, productos};
 use crate::services::common::{slugify, unique_slug};
 use chrono::Utc;
 use diesel::prelude::*;
@@ -117,7 +117,7 @@ fn upsert_uno(conn: &mut PgConnection, owner: Uuid, it: &PublicProducto) -> ApiR
             .optional()?;
 
         if let Some(pid) = existente {
-            // Re-sync: sólo datos "vivos". No tocamos slug ni imágenes.
+            // Re-sync: datos "vivos" + galería y variantes (vienen de ML). No tocamos el slug.
             diesel::update(productos::table.find(pid))
                 .set((
                     productos::nombre.eq(&it.titulo),
@@ -130,6 +130,8 @@ fn upsert_uno(conn: &mut PgConnection, owner: Uuid, it: &PublicProducto) -> ApiR
                     productos::updated_at.eq(now()),
                 ))
                 .execute(conn)?;
+            sincronizar_imagenes(conn, pid, &it.titulo, it)?;
+            sincronizar_variantes(conn, pid, precio, &it.variantes)?;
             return Ok(false);
         }
 
@@ -160,22 +162,112 @@ fn upsert_uno(conn: &mut PgConnection, owner: Uuid, it: &PublicProducto) -> ApiR
             .returning(crate::models::products::Producto::as_returning())
             .get_result(conn)?;
 
-        if let Some(url) = it.thumbnail.as_deref().filter(|u| !u.trim().is_empty()) {
-            let url = normalizar_imagen(url);
-            if url.len() <= 500 {
-                diesel::insert_into(product_images::table)
-                    .values(NewProductImage {
-                        product_id: producto.id,
-                        image_url: url,
-                        alt_text: Some(it.titulo.chars().take(255).collect()),
-                        is_main: true,
-                        variantes: serde_json::json!([]),
-                    })
-                    .execute(conn)?;
-            }
-        }
+        sincronizar_imagenes(conn, producto.id, &it.titulo, it)?;
+        sincronizar_variantes(conn, producto.id, precio, &it.variantes)?;
         Ok(true)
     })
+}
+
+/// Reemplaza la galería del producto con TODAS las imágenes que llegan de MeliHub (la
+/// primera = principal). Si no hay galería, cae al thumbnail. Las imágenes no las
+/// referencia ningún pedido, así que es seguro borrarlas y re-crearlas en cada sync.
+fn sincronizar_imagenes(conn: &mut PgConnection, product_id: Uuid, titulo: &str, it: &PublicProducto) -> ApiResult<()> {
+    let mut urls: Vec<String> = it
+        .imagenes
+        .iter()
+        .map(|u| normalizar_imagen(u))
+        .filter(|u| !u.is_empty() && u.len() <= 500)
+        .collect();
+    if urls.is_empty() {
+        if let Some(t) = it.thumbnail.as_deref().filter(|u| !u.trim().is_empty()) {
+            let t = normalizar_imagen(t);
+            if t.len() <= 500 {
+                urls.push(t);
+            }
+        }
+    }
+    if urls.is_empty() {
+        return Ok(());
+    }
+    diesel::delete(product_images::table.filter(product_images::product_id.eq(product_id))).execute(conn)?;
+    let alt: String = titulo.chars().take(255).collect();
+    for (i, url) in urls.into_iter().enumerate() {
+        diesel::insert_into(product_images::table)
+            .values(NewProductImage {
+                product_id,
+                image_url: url,
+                alt_text: Some(alt.clone()),
+                is_main: i == 0,
+                variantes: serde_json::json!([]),
+            })
+            .execute(conn)?;
+    }
+    Ok(())
+}
+
+/// Crea o actualiza las variantes desde MeliHub SIN borrar las existentes (los pedidos
+/// las referencian por id). Empareja por (nombre, valor): refresca stock y precio, y
+/// reemplaza las imágenes de la variante. Los atributos múltiples de ML (p. ej. Color +
+/// Talla) se aplanan a un solo par nombre/valor ("Color / Talla" = "Rojo / M").
+fn sincronizar_variantes(conn: &mut PgConnection, product_id: Uuid, precio_base: i64, variantes: &[VariantePub]) -> ApiResult<()> {
+    for v in variantes {
+        let nombre: String = v
+            .atributos
+            .iter()
+            .map(|a| a.nombre.trim())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" / ");
+        let valor: String = v
+            .atributos
+            .iter()
+            .map(|a| a.valor.trim())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" / ");
+        let nombre: String = if nombre.is_empty() { "Variante".into() } else { nombre.chars().take(255).collect() };
+        let valor: String = if valor.is_empty() { format!("#{}", v.id) } else { valor.chars().take(255).collect() };
+        let extra = (v.precio - precio_base).max(0);
+        let stock = v.stock.max(0);
+
+        let existente: Option<Uuid> = product_variants::table
+            .filter(product_variants::producto_id.eq(product_id))
+            .filter(product_variants::nombre.eq(&nombre))
+            .filter(product_variants::valor.eq(&valor))
+            .select(product_variants::id)
+            .first(conn)
+            .optional()?;
+        let variant_id = match existente {
+            Some(id) => {
+                diesel::update(product_variants::table.find(id))
+                    .set((
+                        product_variants::stock.eq(stock),
+                        product_variants::precio_extra.eq(extra),
+                        product_variants::updated_at.eq(now()),
+                    ))
+                    .execute(conn)?;
+                id
+            }
+            None => diesel::insert_into(product_variants::table)
+                .values(NewVariante { producto_id: product_id, nombre, valor, stock, precio_extra: extra })
+                .returning(product_variants::id)
+                .get_result(conn)?,
+        };
+        // Imágenes propias de la variante (seguro borrar+recrear: no las referencian pedidos).
+        diesel::delete(product_variant_images::table.filter(product_variant_images::variant_id.eq(variant_id))).execute(conn)?;
+        for (i, url) in v
+            .imagenes
+            .iter()
+            .map(|u| normalizar_imagen(u))
+            .filter(|u| !u.is_empty() && u.len() <= 500)
+            .enumerate()
+        {
+            diesel::insert_into(product_variant_images::table)
+                .values(NewVariantImage { variant_id, image_url: url, alt_text: None, is_main: i == 0, variantes: serde_json::json!([]) })
+                .execute(conn)?;
+        }
+    }
+    Ok(())
 }
 
 /// Para los productos vendidos (producto_id, cantidad), devuelve los que tienen
