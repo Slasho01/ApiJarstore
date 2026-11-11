@@ -103,6 +103,44 @@ pub fn find_or_create(conn: &mut PgConnection, nombre: &str) -> ApiResult<Catego
     )
 }
 
+/// Crea/encuentra la cadena de categorías desde la ruta (raíz → hoja), anidándolas con
+/// `parent_id`. Devuelve la categoría HOJA (donde se asigna el producto). Busca cada nivel
+/// por nombre DENTRO de su padre, así ramas distintas con el mismo nombre no se mezclan.
+pub fn find_or_create_ruta(conn: &mut PgConnection, ruta: &[String]) -> ApiResult<Categoria> {
+    let niveles: Vec<&str> = ruta.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    if niveles.is_empty() {
+        return Err(ApiError::bad_request("Ruta de categoría vacía"));
+    }
+    let mut parent: Option<Uuid> = None;
+    let mut leaf: Option<Categoria> = None;
+    for nombre in niveles {
+        let mut q = categorias::table.filter(categorias::nombre.ilike(nombre)).into_boxed();
+        q = match parent {
+            Some(pid) => q.filter(categorias::parent_id.eq(pid)),
+            None => q.filter(categorias::parent_id.is_null()),
+        };
+        let existing: Option<Categoria> = q.select(Categoria::as_select()).first(conn).optional()?;
+        let cat = match existing {
+            Some(c) => c,
+            None => create(
+                conn,
+                NewCategoria {
+                    nombre: nombre.to_string(),
+                    descripcion: None,
+                    estatus: true,
+                    parent_id: parent,
+                    slug: String::new(),
+                    orden: 0,
+                    icono: None,
+                },
+            )?,
+        };
+        parent = Some(cat.id);
+        leaf = Some(cat);
+    }
+    Ok(leaf.expect("niveles no vacío garantiza una hoja"))
+}
+
 pub fn create(conn: &mut PgConnection, mut data: NewCategoria) -> ApiResult<Categoria> {
     data.nombre = required_text("nombre", &data.nombre, 255)?;
     data.descripcion = optional_text("descripcion", data.descripcion, 5000)?;

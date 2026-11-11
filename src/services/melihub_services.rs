@@ -104,10 +104,15 @@ fn upsert_uno(conn: &mut PgConnection, owner: Uuid, it: &PublicProducto) -> ApiR
         } else {
             serde_json::json!([])
         };
-        // Crea (o reutiliza) la categoría por nombre y la asigna al producto.
-        let categoria_id = match it.categoria.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-            Some(nombre) => Some(crate::services::category_services::find_or_create(conn, nombre)?.id),
-            None => None,
+        // Crea (o reutiliza) la cadena de categorías y asigna la HOJA al producto.
+        // Si el hub manda la ruta completa, se anida (padre → hijo); si no, cae a la hoja.
+        let categoria_id = if !it.categoria_ruta.is_empty() {
+            Some(crate::services::category_services::find_or_create_ruta(conn, &it.categoria_ruta)?.id)
+        } else {
+            match it.categoria.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                Some(nombre) => Some(crate::services::category_services::find_or_create(conn, nombre)?.id),
+                None => None,
+            }
         };
 
         let existente: Option<Uuid> = productos::table

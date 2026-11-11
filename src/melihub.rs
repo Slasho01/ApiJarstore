@@ -56,9 +56,12 @@ pub struct PublicProducto {
     /// Variantes (color/talla/etc.) con su stock, precio e imágenes propias.
     #[serde(default)]
     pub variantes: Vec<VariantePub>,
-    /// Nombre de la categoría (de Mercado Libre).
+    /// Nombre de la categoría hoja (de Mercado Libre).
     #[serde(default)]
     pub categoria: Option<String>,
+    /// Ruta completa de categorías (raíz → hoja) para armar la jerarquía.
+    #[serde(default)]
+    pub categoria_ruta: Vec<String>,
 }
 
 /// Una variante tal como la entrega MeliHub (normalizada desde Mercado Libre).
