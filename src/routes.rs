@@ -59,6 +59,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                     .route(post().to(category_controller::create)),
             )
             .service(
+                r("/categorias/eliminar-masivo")
+                    .route(post().to(category_controller::delete_many)),
+            )
+            .service(
                 r("/categorias/{id}")
                     .route(get().to(category_controller::get))
                     .route(put().to(category_controller::update))

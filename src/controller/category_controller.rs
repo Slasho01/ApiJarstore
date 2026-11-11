@@ -46,3 +46,16 @@ pub async fn delete(path: web::Path<Uuid>, user: AuthUser, pool: web::Data<DbPoo
     db::run(&pool, move |conn| svc::delete(conn, id)).await?;
     Ok(HttpResponse::NoContent().finish())
 }
+
+#[derive(serde::Deserialize)]
+pub struct BulkIds {
+    pub ids: Vec<Uuid>,
+}
+
+/// Borra varias categorías de una vez (selección masiva del admin).
+pub async fn delete_many(user: AuthUser, body: web::Json<BulkIds>, pool: web::Data<DbPool>) -> ApiResult<HttpResponse> {
+    user.require(&[Role::Admin])?;
+    let ids = body.into_inner().ids;
+    let n = db::run(&pool, move |conn| svc::delete_many(conn, &ids)).await?;
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "eliminadas": n })))
+}

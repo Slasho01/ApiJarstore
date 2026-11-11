@@ -201,6 +201,30 @@ pub fn update(conn: &mut PgConnection, id: Uuid, req: CategoriaUpdateRequest) ->
     })
 }
 
+/// Borra VARIAS categorías en una sola transacción (atómico, idempotente). Por cada una
+/// aplica la misma regla: sus subcategorías suben un nivel y sus productos quedan sin
+/// categoría. Las que ya no existan se ignoran. Devuelve cuántas borró.
+pub fn delete_many(conn: &mut PgConnection, ids: &[Uuid]) -> ApiResult<usize> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    conn.transaction(|conn| {
+        let mut n = 0;
+        for &id in ids {
+            let existe: Option<Uuid> =
+                categorias::table.find(id).select(categorias::id).first(conn).optional()?;
+            let Some(_) = existe else { continue };
+            let cat = get(conn, &id.to_string())?;
+            diesel::update(categorias::table.filter(categorias::parent_id.eq(id)))
+                .set(categorias::parent_id.eq(cat.parent_id))
+                .execute(conn)?;
+            diesel::delete(categorias::table.find(id)).execute(conn)?;
+            n += 1;
+        }
+        Ok(n)
+    })
+}
+
 /// Al borrar, sus subcategorías suben un nivel (no se pierden) y sus productos quedan sin categoría.
 pub fn delete(conn: &mut PgConnection, id: Uuid) -> ApiResult<()> {
     conn.transaction(|conn| {
