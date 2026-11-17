@@ -41,13 +41,13 @@ pub async fn checkout(
         Err(e) => log::error!("No se pudo preparar el correo de confirmación: {e}"),
     }
     notify_store_new_order(&mailer, &pool, &config.frontend_url, &orden);
-    // Baja el stock de los productos que vinieron de MeliHub, también en Mercado Libre.
+    // Baja el stock de los productos que vinieron de Ventoki, también en Mercado Libre.
     report_melihub(&melihub, &pool, &orden, false);
     Ok(HttpResponse::Created().json(orden))
 }
 
-/// Para cada producto de la orden con origen en MeliHub, reporta el movimiento de stock a
-/// MeliHub (que a su vez lo empuja a Mercado Libre): venta = descuenta, `devolucion` = suma.
+/// Para cada producto de la orden con origen en Ventoki, reporta el movimiento de stock a
+/// Ventoki (que a su vez lo empuja a Mercado Libre): venta = descuenta, `devolucion` = suma.
 /// Best-effort: corre en segundo plano y nunca frena ni invalida la operación en JarStore.
 fn report_melihub(melihub: &web::Data<crate::melihub::Melihub>, pool: &web::Data<DbPool>, o: &OrdenDetalle, devolucion: bool) {
     if !melihub.enabled() {
@@ -69,7 +69,7 @@ fn report_melihub(melihub: &web::Data<crate::melihub::Melihub>, pool: &web::Data
         let objetivos = match crate::services::melihub_services::melihub_ids_de(&mut conn, &lineas) {
             Ok(v) => v,
             Err(e) => {
-                log::warn!("MeliHub: no se pudieron resolver los productos vendidos: {e}");
+                log::warn!("Ventoki: no se pudieron resolver los productos vendidos: {e}");
                 return;
             }
         };
@@ -77,7 +77,7 @@ fn report_melihub(melihub: &web::Data<crate::melihub::Melihub>, pool: &web::Data
             let res = if devolucion { client.reportar_devolucion(mid, qty) } else { client.reportar_venta(mid, qty) };
             if let Err(e) = res {
                 let accion = if devolucion { "devolución" } else { "venta" };
-                log::warn!("MeliHub: no se pudo reportar {accion} de stock de {mid} (x{qty}): {e}");
+                log::warn!("Ventoki: no se pudo reportar {accion} de stock de {mid} (x{qty}): {e}");
             }
         }
     });
@@ -184,7 +184,7 @@ pub async fn cancel(path: web::Path<Uuid>, user: AuthUser, pool: web::Data<DbPoo
     let id = path.into_inner();
     let orden = db::run(&pool, move |conn| svc::cancel(conn, id, user)).await?;
     send_status_email(&mailer, &config.frontend_url, &orden, "cancelado");
-    // La cancelación restauró el stock local; devuélvelo también en MeliHub/Mercado Libre.
+    // La cancelación restauró el stock local; devuélvelo también en Ventoki/Mercado Libre.
     report_melihub(&melihub, &pool, &orden, true);
     Ok(HttpResponse::Ok().json(orden))
 }
@@ -215,7 +215,7 @@ pub async fn admin_set_status(
     let (id, next) = (path.into_inner(), body.estatus);
     let orden = db::run(&pool, move |conn| svc::set_status(conn, id, next)).await?;
     send_status_email(&mailer, &config.frontend_url, &orden, next.as_str());
-    // Si el admin la pasó a cancelado, se restauró el stock local: devuélvelo en MeliHub/ML.
+    // Si el admin la pasó a cancelado, se restauró el stock local: devuélvelo en Ventoki/ML.
     if next == crate::models::orden::EstatusOrden::Cancelado {
         report_melihub(&melihub, &pool, &orden, true);
     }

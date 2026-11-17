@@ -9,7 +9,7 @@ use actix_web::{web, HttpResponse};
 use diesel::prelude::*;
 use serde_json::json;
 
-/// Importa a JarStore las publicaciones de Mercado Libre centralizadas en MeliHub
+/// Importa a JarStore las publicaciones de Mercado Libre centralizadas en Ventoki
 /// (crea/actualiza productos). Sólo admin.
 pub async fn admin_sync(user: AuthUser, pool: web::Data<DbPool>, melihub: web::Data<Melihub>) -> ApiResult<HttpResponse> {
     user.require(&[Role::Admin])?;

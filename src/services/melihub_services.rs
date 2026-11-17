@@ -1,9 +1,9 @@
-//! Integración de JarStore con **MeliHub** (hub de Mercado Libre):
-//!   - `importar`: trae el catálogo de MeliHub y lo refleja en `productos`
+//! Integración de JarStore con **Ventoki** (hub de Mercado Libre):
+//!   - `importar`: trae el catálogo de Ventoki y lo refleja en `productos`
 //!     (crea/actualiza, vinculando por `melihub_id`). El precio es el del canal
-//!     JarStore que sirve MeliHub.
+//!     JarStore que sirve Ventoki.
 //!   - `melihub_ids_de`: para una venta, devuelve qué productos vendidos tienen
-//!     origen en MeliHub, para reportar la baja de stock (ver `melihub.rs`).
+//!     origen en Ventoki, para reportar la baja de stock (ver `melihub.rs`).
 //!
 //! La re-importación NO toca el slug ni las imágenes ya existentes (sólo nombre,
 //! precio, stock y estado), para no pisar ajustes hechos en JarStore.
@@ -23,7 +23,7 @@ pub struct SyncResult {
     pub creados: i64,
     pub actualizados: i64,
     pub errores: i64,
-    /// Productos de MeliHub que se pausaron por ya no venir en la sincronización
+    /// Productos de Ventoki que se pausaron por ya no venir en la sincronización
     /// (duplicados de catálogo descartados, o despublicados en Mercado Libre).
     pub pausados: i64,
     pub total: i64,
@@ -57,7 +57,7 @@ fn normalizar_imagen(url: &str) -> String {
     https.replace("-I.jpg", "-O.jpg").replace("-I.webp", "-O.webp")
 }
 
-/// Importa (crea o actualiza) en JarStore el catálogo publicado por MeliHub.
+/// Importa (crea o actualiza) en JarStore el catálogo publicado por Ventoki.
 /// `owner` es el admin que dispara la sincronización (dueño de los productos nuevos).
 pub fn importar(conn: &mut PgConnection, client: &Melihub, owner: Uuid) -> ApiResult<SyncResult> {
     let items = client.fetch_productos()?;
@@ -70,12 +70,12 @@ pub fn importar(conn: &mut PgConnection, client: &Melihub, owner: Uuid) -> ApiRe
             Ok(false) => r.actualizados += 1,
             Err(e) => {
                 r.errores += 1;
-                log::warn!("MeliHub: no se pudo importar '{}' ({}): {e}", it.titulo, it.ml_item_id);
+                log::warn!("Ventoki: no se pudo importar '{}' ({}): {e}", it.titulo, it.ml_item_id);
             }
         }
     }
 
-    // Pausa los productos vinculados a MeliHub que ya NO vienen en la respuesta
+    // Pausa los productos vinculados a Ventoki que ya NO vienen en la respuesta
     // (duplicados de catálogo descartados o publicaciones cerradas en ML). No se
     // borran, por si el admin quiere revisarlos; quedan en "Pausados".
     if !servidos.is_empty() {
@@ -175,7 +175,7 @@ fn upsert_uno(conn: &mut PgConnection, owner: Uuid, it: &PublicProducto) -> ApiR
     })
 }
 
-/// Reemplaza la galería del producto con TODAS las imágenes que llegan de MeliHub (la
+/// Reemplaza la galería del producto con TODAS las imágenes que llegan de Ventoki (la
 /// primera = principal). Si no hay galería, cae al thumbnail. Las imágenes no las
 /// referencia ningún pedido, así que es seguro borrarlas y re-crearlas en cada sync.
 fn sincronizar_imagenes(conn: &mut PgConnection, product_id: Uuid, titulo: &str, it: &PublicProducto) -> ApiResult<()> {
@@ -212,7 +212,7 @@ fn sincronizar_imagenes(conn: &mut PgConnection, product_id: Uuid, titulo: &str,
     Ok(())
 }
 
-/// Crea o actualiza las variantes desde MeliHub SIN borrar las existentes (los pedidos
+/// Crea o actualiza las variantes desde Ventoki SIN borrar las existentes (los pedidos
 /// las referencian por id). Empareja por (nombre, valor): refresca stock y precio, y
 /// reemplaza las imágenes de la variante. Los atributos múltiples de ML (p. ej. Color +
 /// Talla) se aplanan a un solo par nombre/valor ("Color / Talla" = "Rojo / M").
@@ -278,7 +278,7 @@ fn sincronizar_variantes(conn: &mut PgConnection, product_id: Uuid, precio_base:
 }
 
 /// Para los productos vendidos (producto_id, cantidad), devuelve los que tienen
-/// origen en MeliHub como (melihub_id, cantidad), listos para reportar la venta.
+/// origen en Ventoki como (melihub_id, cantidad), listos para reportar la venta.
 pub fn melihub_ids_de(conn: &mut PgConnection, lineas: &[(Uuid, i32)]) -> ApiResult<Vec<(Uuid, i32)>> {
     if lineas.is_empty() {
         return Ok(vec![]);

@@ -75,7 +75,7 @@ fn check_parent(conn: &mut PgConnection, id: Option<Uuid>, parent: Option<Uuid>)
 }
 
 /// Devuelve la categoría con ese nombre (sin distinguir mayúsculas), creándola
-/// si no existe. Usada por la importación desde MeliHub.
+/// si no existe. Usada por la importación desde Ventoki.
 pub fn find_or_create(conn: &mut PgConnection, nombre: &str) -> ApiResult<Categoria> {
     let nombre = nombre.trim();
     if nombre.is_empty() {

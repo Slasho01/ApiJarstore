@@ -33,7 +33,7 @@ pub struct Producto {
     pub alto_cm: Option<i32>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
-    /// Si el producto vino de MeliHub (Mercado Libre), su id allá. None = producto propio.
+    /// Si el producto vino de Ventoki (Mercado Libre), su id allá. None = producto propio.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub melihub_id: Option<Uuid>,
     /// URL del video (YouTube) de la ficha, si tiene.

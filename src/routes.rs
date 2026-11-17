@@ -220,7 +220,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                             .route(put().to(extras_controller::coupon_update))
                             .route(delete().to(extras_controller::coupon_delete)),
                     )
-                    // ---- MeliHub (Mercado Libre) ----
+                    // ---- Ventoki (Mercado Libre) ----
                     .service(r("/melihub/estado").route(get().to(melihub_controller::admin_status)))
                     .service(r("/melihub/sincronizar").route(post().to(melihub_controller::admin_sync))),
             ),
