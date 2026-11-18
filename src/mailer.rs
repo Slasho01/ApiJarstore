@@ -52,8 +52,11 @@ impl Mailer {
         }
     }
 
-    /// ¿Hay correo configurado? (usa una conexión; llamar fuera de un hilo async pesado)
+    /// ¿Hay correo configurado? (Resend por env, o SMTP en BD/entorno.)
     pub fn is_configured(&self, conn: &mut PgConnection) -> bool {
+        if env::var("RESEND_API_KEY").map(|k| !k.trim().is_empty()).unwrap_or(false) {
+            return true;
+        }
         self.effective_config(conn).is_some()
     }
 
@@ -71,8 +74,22 @@ impl Mailer {
         }
     }
 
-    /// Envía y reporta el error real. `Ok(false)` = no hay SMTP configurado (no se envió).
+    /// Envía y reporta el error real. `Ok(false)` = no hay correo configurado (no se envió).
     pub fn send_strict(&self, to: &str, subject: &str, text: &str, html: &str) -> Result<bool, String> {
+        // 1) Resend (HTTP): funciona en Render, que BLOQUEA el SMTP saliente. Si hay API key,
+        //    es la vía principal.
+        if let Ok(key) = env::var("RESEND_API_KEY") {
+            let key = key.trim().to_string();
+            if !key.is_empty() {
+                let from = env::var("RESEND_FROM")
+                    .or_else(|_| env::var("SMTP_FROM"))
+                    .ok()
+                    .filter(|s| !s.trim().is_empty())
+                    .unwrap_or_else(|| "JarStore <no-reply@jarstore.cl>".to_string());
+                return enviar_resend(&key, &from, to, subject, text, html).map(|_| true);
+            }
+        }
+        // 2) SMTP (BD o entorno) — respaldo (solo sirve en hosts que permitan SMTP saliente).
         let mut conn = self.pool.get().map_err(|e| format!("Sin conexión a la BD: {e}"))?;
         let Some(cfg) = self.effective_config(&mut conn) else {
             return Ok(false);
@@ -90,6 +107,23 @@ impl Mailer {
             )
             .map_err(|e| e.to_string())?;
         transport.send(&email).map(|_| true).map_err(|e| e.to_string())
+    }
+}
+
+/// Envía un correo por la API HTTP de Resend (bloqueante). Funciona en Render.
+fn enviar_resend(api_key: &str, from: &str, to: &str, subject: &str, text: &str, html: &str) -> Result<(), String> {
+    let body = serde_json::json!({ "from": from, "to": [to.trim()], "subject": subject, "html": html, "text": text });
+    let resp = reqwest::blocking::Client::new()
+        .post("https://api.resend.com/emails")
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()
+        .map_err(|e| format!("Resend no respondió: {e}"))?;
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        let st = resp.status();
+        Err(format!("Resend rechazó el correo ({st}): {}", resp.text().unwrap_or_default()))
     }
 }
 
